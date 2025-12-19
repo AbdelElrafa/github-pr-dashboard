@@ -1,5 +1,5 @@
 <div
-    class="min-h-screen"
+    class="min-h-screen flex flex-col"
     x-data="{
         settingsToken: localStorage.getItem('github_token') || '',
         settingsOrganizations: localStorage.getItem('github_organizations') || '',
@@ -8,7 +8,7 @@
         }
     }"
 >
-    <div class="max-w-full mx-auto px-4 py-8">
+    <div class="w-full px-4 py-8 flex-1">
         <header class="mb-6 flex items-center justify-between">
             <div>
                 <flux:heading size="xl">GitHub PR Assistant</flux:heading>
@@ -496,6 +496,13 @@
             </div>
         @endif
     </div>
+
+    {{-- Footer --}}
+    <footer class="py-6 text-center">
+        <flux:text size="sm" class="text-zinc-400">
+            Built by <a href="https://github.com/AbdelElrafa" target="_blank" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline">Abdel Elrafa</a> and <a href="https://claude.ai/code" target="_blank" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline">Claude Code</a>
+        </flux:text>
+    </footer>
 
     {{-- Theme Toggle (Bottom Left) --}}
     <div class="fixed bottom-4 left-4" x-data>
