@@ -13,7 +13,7 @@ A Laravel + Livewire dashboard for managing your GitHub pull requests across mul
 
 ## Requirements
 
-- PHP 8.3+
+- PHP 8.5
 - Composer
 - Node.js & npm
 - GitHub CLI (`gh`) installed

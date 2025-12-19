@@ -11,6 +11,18 @@ use Smpita\TypeAs\TypeAs;
 
 class GitHubService
 {
+    protected const GH_BINARY = '/opt/homebrew/bin/gh';
+
+    protected ?string $token;
+
+    protected string $organizations;
+
+    public function __construct(?string $token = null, string $organizations = '')
+    {
+        $this->token = $token ?? TypeAs::nullableString(config('services.github.token'));
+        $this->organizations = $organizations !== '' ? $organizations : TypeAs::string(config('services.github.organizations'), '');
+    }
+
     /**
      * Get the list of organizations to filter by.
      *
@@ -18,13 +30,11 @@ class GitHubService
      */
     protected function getOrganizations(): array
     {
-        $orgs = TypeAs::string(config('services.github.organizations'), '');
-
-        if ($orgs === '') {
+        if ($this->organizations === '') {
             return [];
         }
 
-        return array_values(array_filter(array_map('trim', explode(',', $orgs))));
+        return array_values(array_filter(array_map('trim', explode(',', $this->organizations))));
     }
 
     /**
@@ -350,14 +360,17 @@ class GitHubService
      */
     protected function runGhCommand(array $command): string
     {
-        $token = TypeAs::nullableString(config('services.github.token'));
+        if ($this->token === null || $this->token === '') {
+            throw new RuntimeException('GitHub token not configured. Click the settings icon to add your token.');
+        }
 
-        if ($token === null || $token === '') {
-            throw new RuntimeException('GitHub token not configured. Add GITHUB_TOKEN to your .env file.');
+        // Replace 'gh' with full path for environments where PATH doesn't include Homebrew
+        if ($command[0] === 'gh') {
+            $command[0] = self::GH_BINARY;
         }
 
         $result = Process::env([
-            'GH_TOKEN' => $token,
+            'GH_TOKEN' => $this->token,
         ])->run($command);
 
         if ($result->failed()) {
