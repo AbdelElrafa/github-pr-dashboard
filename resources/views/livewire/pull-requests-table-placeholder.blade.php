@@ -14,7 +14,8 @@
                 <div class="h-5 w-8 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                 <div class="h-5 w-32 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                 <div class="h-5 flex-1 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                <div class="h-5 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                <div class="h-5 w-12 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                <div class="h-5 w-12 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
             </div>
         @endfor
     </div>

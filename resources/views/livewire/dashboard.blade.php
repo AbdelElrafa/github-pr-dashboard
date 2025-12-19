@@ -18,7 +18,7 @@
                     <flux:text size="xs" class="text-zinc-500">Auto-refresh</flux:text>
                     <flux:radio.group wire:model.live="refreshInterval" variant="segmented" size="sm">
                         <flux:radio value="0" label="Off" />
-                        <flux:radio value="3" label="1m" />
+                        <flux:radio value="60" label="1m" />
                         <flux:radio value="180" label="3m" />
                         <flux:radio value="300" label="5m" />
                         <flux:radio value="600" label="10m" />
@@ -34,10 +34,6 @@
                     <flux:button icon="cog-6-tooth" variant="ghost" size="sm" />
                     <flux:menu class="w-80">
                         <div class="p-4 space-y-4">
-                            <div>
-                                <flux:heading size="sm">GitHub Settings</flux:heading>
-                            </div>
-
                             <flux:input
                                 type="password"
                                 label="GitHub Token"
@@ -98,8 +94,19 @@
 
         {{-- Filters --}}
         @if ($token)
-            <div class="mb-6 flex flex-wrap items-center gap-6">
-                <flux:text size="sm" class="font-medium">Filters:</flux:text>
+            <div class="mb-6 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+                <div class="flex items-center gap-6">
+                    {{-- Search Input --}}
+                    <div class="flex-1">
+                        <flux:input
+                            wire:model.live.debounce.250ms="search"
+                            wire:target="search"
+                            placeholder="Search PRs..."
+                            icon="magnifying-glass"
+                            clearable
+                            :loading="false"
+                        />
+                    </div>
 
                 {{-- Repository Filter (Searchable Pillbox) --}}
                 @if ($repositories->isNotEmpty())
@@ -150,12 +157,12 @@
                                 return repo ? repo.name : nameWithOwner;
                             }
                         }"
-                        class="relative flex-1 max-w-xl"
+                        class="flex-1 max-w-xl shrink-0"
                         x-on:click.outside="open = false"
                     >
                         {{-- Pills and Search Input --}}
                         <div
-                            class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[38px] cursor-text"
+                            class="flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[40px] cursor-text"
                             x-on:click="$refs.searchInput.focus(); open = true"
                         >
                             {{-- Selected Pills --}}
@@ -246,33 +253,246 @@
                         <flux:menu.checkbox wire:model.live="hideDrafts">Drafts</flux:menu.checkbox>
                     </flux:menu>
                 </flux:dropdown>
+                </div>
             </div>
 
             {{-- PR Tables --}}
             <div class="space-y-8">
-                <livewire:pull-requests-table
-                    type="my-prs"
-                    :token="$token"
-                    :organizations="$organizations"
-                    :hide-approved-to-master="$hideApprovedToMaster"
-                    :hide-approved-to-other="$hideApprovedToOther"
-                    :hide-drafts="$hideDrafts"
-                    :refresh-interval="$refreshInterval"
-                    :selected-repositories="$selectedRepositories"
-                    wire:key="my-prs"
-                />
+                {{-- Pull Requests Section --}}
+                <div class="relative">
+                    {{-- Author Filter (positioned to align with heading inside table) --}}
+                    @if ($members->isNotEmpty())
+                        <div class="absolute right-0 top-0 z-10">
+                            @php $allMembers = $members->toArray(); @endphp
+                            <div
+                                x-data="{
+                                    search: '',
+                                    open: false,
+                                    members: {{ Js::from($allMembers) }},
+                                    get selected() {
+                                        return $wire.selectedAuthors || [];
+                                    },
+                                    get filtered() {
+                                        if (!this.search) return this.members;
+                                        const s = this.search.toLowerCase();
+                                        return this.members.filter(m => m.login.toLowerCase().includes(s));
+                                    },
+                                    toggle(login) {
+                                        const current = [...this.selected];
+                                        const idx = current.indexOf(login);
+                                        if (idx === -1) {
+                                            current.push(login);
+                                        } else {
+                                            current.splice(idx, 1);
+                                        }
+                                        $wire.set('selectedAuthors', current);
+                                        this.search = '';
+                                    },
+                                    remove(login) {
+                                        const current = [...this.selected];
+                                        const idx = current.indexOf(login);
+                                        if (idx !== -1) {
+                                            current.splice(idx, 1);
+                                            $wire.set('selectedAuthors', current);
+                                        }
+                                    },
+                                    isSelected(login) {
+                                        return this.selected.includes(login);
+                                    },
+                                    getAvatarUrl(login) {
+                                        const member = this.members.find(m => m.login === login);
+                                        return member ? member.avatarUrl : null;
+                                    }
+                                }"
+                                class="relative flex-1 max-w-sm"
+                                x-on:click.outside="open = false"
+                            >
+                                <div
+                                    class="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[32px] cursor-text"
+                                    x-on:click="$refs.authorSearchInput.focus(); open = true"
+                                >
+                                    <template x-for="login in selected" :key="login">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                                            <img x-show="getAvatarUrl(login)" :src="getAvatarUrl(login)" class="w-4 h-4 rounded-full" />
+                                            <span x-text="login"></span>
+                                            <button type="button" x-on:click.stop="remove(login)" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </span>
+                                    </template>
+                                    <input
+                                        x-ref="authorSearchInput"
+                                        x-model="search"
+                                        x-on:focus="open = true"
+                                        x-on:keydown.escape="open = false; search = ''"
+                                        type="text"
+                                        placeholder="Filter by author..."
+                                        class="flex-1 min-w-[100px] bg-transparent border-0 p-0 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-0"
+                                    />
+                                </div>
+                                <div
+                                    x-show="open"
+                                    x-transition
+                                    class="absolute right-0 z-50 mt-1 w-64 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg"
+                                >
+                                    <template x-if="filtered.length === 0">
+                                        <div class="px-3 py-2 text-sm text-zinc-500">No members found</div>
+                                    </template>
+                                    <template x-for="member in filtered" :key="member.login">
+                                        <button
+                                            type="button"
+                                            x-on:click="toggle(member.login)"
+                                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                            :class="{ 'bg-zinc-50 dark:bg-zinc-700/50': isSelected(member.login) }"
+                                        >
+                                            <svg x-show="isSelected(member.login)" class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <span x-show="!isSelected(member.login)" class="w-4 shrink-0"></span>
+                                            <img :src="member.avatarUrl" class="w-5 h-5 rounded-full" x-show="member.avatarUrl" />
+                                            <span class="text-zinc-900 dark:text-zinc-100" x-text="member.login"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
 
-                <livewire:pull-requests-table
-                    type="review-requests"
-                    :token="$token"
-                    :organizations="$organizations"
-                    :hide-approved-to-master="$hideApprovedToMaster"
-                    :hide-approved-to-other="$hideApprovedToOther"
-                    :hide-drafts="$hideDrafts"
-                    :refresh-interval="$refreshInterval"
-                    :selected-repositories="$selectedRepositories"
-                    wire:key="review-requests"
-                />
+                    <livewire:pull-requests-table
+                        type="my-prs"
+                        :token="$token"
+                        :organizations="$organizations"
+                        :hide-approved-to-master="$hideApprovedToMaster"
+                        :hide-approved-to-other="$hideApprovedToOther"
+                        :hide-drafts="$hideDrafts"
+                        :refresh-interval="$refreshInterval"
+                        :selected-repositories="$selectedRepositories"
+                        :selected-authors="$selectedAuthors"
+                        :selected-reviewers="$selectedReviewers"
+                        :search="$search"
+                        wire:key="my-prs-{{ implode(',', $selectedAuthors) }}"
+                    />
+                </div>
+
+                {{-- Review Requests Section --}}
+                <div class="relative">
+                    {{-- Reviewer Filter (positioned to align with heading inside table) --}}
+                    @if ($members->isNotEmpty())
+                        <div class="absolute right-0 top-0 z-10">
+                            @php $allMembers = $members->toArray(); @endphp
+                            <div
+                                x-data="{
+                                    search: '',
+                                    open: false,
+                                    members: {{ Js::from($allMembers) }},
+                                    get selected() {
+                                        return $wire.selectedReviewers || [];
+                                    },
+                                    get filtered() {
+                                        if (!this.search) return this.members;
+                                        const s = this.search.toLowerCase();
+                                        return this.members.filter(m => m.login.toLowerCase().includes(s));
+                                    },
+                                    toggle(login) {
+                                        const current = [...this.selected];
+                                        const idx = current.indexOf(login);
+                                        if (idx === -1) {
+                                            current.push(login);
+                                        } else {
+                                            current.splice(idx, 1);
+                                        }
+                                        $wire.set('selectedReviewers', current);
+                                        this.search = '';
+                                    },
+                                    remove(login) {
+                                        const current = [...this.selected];
+                                        const idx = current.indexOf(login);
+                                        if (idx !== -1) {
+                                            current.splice(idx, 1);
+                                            $wire.set('selectedReviewers', current);
+                                        }
+                                    },
+                                    isSelected(login) {
+                                        return this.selected.includes(login);
+                                    },
+                                    getAvatarUrl(login) {
+                                        const member = this.members.find(m => m.login === login);
+                                        return member ? member.avatarUrl : null;
+                                    }
+                                }"
+                                class="relative flex-1 max-w-sm"
+                                x-on:click.outside="open = false"
+                            >
+                                <div
+                                    class="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[32px] cursor-text"
+                                    x-on:click="$refs.reviewerSearchInput.focus(); open = true"
+                                >
+                                    <template x-for="login in selected" :key="login">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                                            <img x-show="getAvatarUrl(login)" :src="getAvatarUrl(login)" class="w-4 h-4 rounded-full" />
+                                            <span x-text="login"></span>
+                                            <button type="button" x-on:click.stop="remove(login)" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </span>
+                                    </template>
+                                    <input
+                                        x-ref="reviewerSearchInput"
+                                        x-model="search"
+                                        x-on:focus="open = true"
+                                        x-on:keydown.escape="open = false; search = ''"
+                                        type="text"
+                                        placeholder="Filter by reviewer..."
+                                        class="flex-1 min-w-[100px] bg-transparent border-0 p-0 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-0"
+                                    />
+                                </div>
+                                <div
+                                    x-show="open"
+                                    x-transition
+                                    class="absolute right-0 z-50 mt-1 w-64 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg"
+                                >
+                                    <template x-if="filtered.length === 0">
+                                        <div class="px-3 py-2 text-sm text-zinc-500">No members found</div>
+                                    </template>
+                                    <template x-for="member in filtered" :key="member.login">
+                                        <button
+                                            type="button"
+                                            x-on:click="toggle(member.login)"
+                                            class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                            :class="{ 'bg-zinc-50 dark:bg-zinc-700/50': isSelected(member.login) }"
+                                        >
+                                            <svg x-show="isSelected(member.login)" class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                            <span x-show="!isSelected(member.login)" class="w-4 shrink-0"></span>
+                                            <img :src="member.avatarUrl" class="w-5 h-5 rounded-full" x-show="member.avatarUrl" />
+                                            <span class="text-zinc-900 dark:text-zinc-100" x-text="member.login"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    <livewire:pull-requests-table
+                        type="review-requests"
+                        :token="$token"
+                        :organizations="$organizations"
+                        :hide-approved-to-master="$hideApprovedToMaster"
+                        :hide-approved-to-other="$hideApprovedToOther"
+                        :hide-drafts="$hideDrafts"
+                        :refresh-interval="$refreshInterval"
+                        :selected-repositories="$selectedRepositories"
+                        :selected-authors="$selectedAuthors"
+                        :selected-reviewers="$selectedReviewers"
+                        :search="$search"
+                        wire:key="review-requests-{{ implode(',', $selectedReviewers) }}"
+                    />
+                </div>
             </div>
         @endif
     </div>

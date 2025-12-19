@@ -36,6 +36,17 @@ class PullRequestsTable extends Component
     #[Reactive]
     public array $selectedRepositories = [];
 
+    /** @var array<int, string> */
+    #[Reactive]
+    public array $selectedAuthors = [];
+
+    /** @var array<int, string> */
+    #[Reactive]
+    public array $selectedReviewers = [];
+
+    #[Reactive]
+    public string $search = '';
+
     public string $type = 'my-prs';
 
     /** @var Collection<int, array<string, mixed>> */
@@ -57,6 +68,12 @@ class PullRequestsTable extends Component
     #[On('manual-refresh-tables')]
     public function manualRefresh(): void
     {
+        // Clear cache to force fresh data on manual refresh
+        if ($this->token !== '') {
+            $github = new GitHubService($this->token, $this->organizations);
+            $github->clearCache($this->selectedRepositories);
+        }
+
         $this->loadData();
         $this->js("window.dispatchEvent(new CustomEvent('manual-refresh-end'))");
     }
@@ -110,6 +127,25 @@ class PullRequestsTable extends Component
                     return TypeAs::bool($pr['isDraft'] ?? false);
                 });
             })
+            ->when($this->search !== '', function (Collection $prs): Collection {
+                $search = strtolower($this->search);
+
+                return $prs->filter(function (array $pr) use ($search): bool {
+                    $title = strtolower(TypeAs::string($pr['title'] ?? ''));
+                    $branch = strtolower(TypeAs::string($pr['headRefName'] ?? ''));
+                    $target = strtolower(TypeAs::string($pr['baseRefName'] ?? ''));
+                    $number = (string) ($pr['number'] ?? '');
+                    $author = strtolower(TypeAs::string($pr['author']['login'] ?? ''));
+                    $repo = strtolower(TypeAs::string($pr['repository']['name'] ?? ''));
+
+                    return str_contains($title, $search)
+                        || str_contains($branch, $search)
+                        || str_contains($target, $search)
+                        || str_contains($number, $search)
+                        || str_contains($author, $search)
+                        || str_contains($repo, $search);
+                });
+            })
             ->values();
 
         return $filtered;
@@ -126,15 +162,29 @@ class PullRequestsTable extends Component
             $this->currentUser = $github->getCurrentUser();
 
             if ($this->type === 'my-prs') {
-                $this->pullRequests = $github->getMyPullRequests();
+                $this->pullRequests = $github->getPullRequestsByAuthors($this->selectedAuthors, $this->selectedRepositories);
             } else {
-                $this->pullRequests = $github->getReviewRequests();
+                $this->pullRequests = $github->getPullRequestsForReviewers($this->selectedReviewers, $this->selectedRepositories);
             }
 
             $this->error = null;
         } catch (\Exception $e) {
             $this->error = $e->getMessage();
         }
+    }
+
+    /**
+     * Check if we're filtering by only the current user (to hide author column).
+     */
+    public function isFilteringBySelf(): bool
+    {
+        if ($this->type === 'my-prs') {
+            return count($this->selectedAuthors) === 1
+                && ($this->selectedAuthors[0] === '@me' || $this->selectedAuthors[0] === $this->currentUser);
+        }
+
+        return count($this->selectedReviewers) === 1
+            && ($this->selectedReviewers[0] === '@me' || $this->selectedReviewers[0] === $this->currentUser);
     }
 
     public function placeholder(): View
