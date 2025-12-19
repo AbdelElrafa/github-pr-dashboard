@@ -32,6 +32,10 @@ class PullRequestsTable extends Component
     #[Reactive]
     public int $refreshInterval = 0;
 
+    /** @var array<int, string> */
+    #[Reactive]
+    public array $selectedRepositories = [];
+
     public string $type = 'my-prs';
 
     /** @var Collection<int, array<string, mixed>> */
@@ -69,6 +73,22 @@ class PullRequestsTable extends Component
     {
         /** @var Collection<int, array<string, mixed>> $filtered */
         $filtered = $this->pullRequests
+            ->when(count($this->selectedRepositories) > 0, function (Collection $prs): Collection {
+                return $prs->filter(function (array $pr): bool {
+                    $repository = TypeAs::array($pr['repository'] ?? [], []);
+                    $nameWithOwner = TypeAs::string($repository['nameWithOwner'] ?? '');
+
+                    // Also check owner/name format
+                    if ($nameWithOwner === '') {
+                        $owner = TypeAs::array($repository['owner'] ?? [], []);
+                        $ownerLogin = TypeAs::string($owner['login'] ?? '');
+                        $repoName = TypeAs::string($repository['name'] ?? '');
+                        $nameWithOwner = "{$ownerLogin}/{$repoName}";
+                    }
+
+                    return in_array($nameWithOwner, $this->selectedRepositories, true);
+                });
+            })
             ->when($this->hideApprovedToMaster, function (Collection $prs): Collection {
                 return $prs->reject(function (array $pr): bool {
                     $isApproved = TypeAs::bool($pr['isApproved'] ?? false);

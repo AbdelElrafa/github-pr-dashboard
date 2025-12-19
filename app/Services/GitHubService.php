@@ -340,6 +340,93 @@ class GitHubService
     }
 
     /**
+     * Get accessible repositories grouped by owner.
+     *
+     * @return Collection<string, Collection<int, array{name: string, nameWithOwner: string}>>
+     */
+    public function getAccessibleRepositories(): Collection
+    {
+        $organizations = $this->getOrganizations();
+
+        // If no organizations specified, get user's repos and org repos
+        if ($organizations === []) {
+            return $this->getAllAccessibleRepositories();
+        }
+
+        // Get repos for specified organizations concurrently
+        if (count($organizations) === 1) {
+            $repos = $this->getRepositoriesForOwner($organizations[0]);
+
+            return collect([$organizations[0] => $repos]);
+        }
+
+        $tasks = [];
+        foreach ($organizations as $org) {
+            $tasks[$org] = fn () => $this->getRepositoriesForOwner($org);
+        }
+
+        /** @var array<string, Collection<int, array{name: string, nameWithOwner: string}>> $results */
+        $results = Concurrency::run($tasks);
+
+        return collect($results)->filter(fn (Collection $repos) => $repos->isNotEmpty());
+    }
+
+    /**
+     * Get all accessible repositories (user's + orgs they belong to).
+     *
+     * @return Collection<string, Collection<int, array{name: string, nameWithOwner: string}>>
+     */
+    protected function getAllAccessibleRepositories(): Collection
+    {
+        $result = $this->runGhCommand([
+            'gh', 'repo', 'list',
+            '--limit', '100',
+            '--json', 'name,nameWithOwner,owner',
+        ]);
+
+        /** @var array<int, array{name: string, nameWithOwner: string, owner: array{login: string}}> $repos */
+        $repos = TypeAs::array(json_decode($result, true), []);
+
+        return collect($repos)
+            ->map(fn (array $repo): array => [
+                'name' => TypeAs::string($repo['name'] ?? ''),
+                'nameWithOwner' => TypeAs::string($repo['nameWithOwner'] ?? ''),
+                'owner' => TypeAs::string($repo['owner']['login'] ?? ''),
+            ])
+            ->groupBy('owner')
+            ->map(fn (Collection $repos): Collection => $repos->map(fn (array $repo): array => [
+                'name' => $repo['name'],
+                'nameWithOwner' => $repo['nameWithOwner'],
+            ])->values());
+    }
+
+    /**
+     * Get repositories for a specific owner (user or org).
+     *
+     * @return Collection<int, array{name: string, nameWithOwner: string}>
+     */
+    protected function getRepositoriesForOwner(string $owner): Collection
+    {
+        try {
+            $result = $this->runGhCommand([
+                'gh', 'repo', 'list', $owner,
+                '--limit', '100',
+                '--json', 'name,nameWithOwner',
+            ]);
+
+            /** @var array<int, array{name: string, nameWithOwner: string}> $repos */
+            $repos = TypeAs::array(json_decode($result, true), []);
+
+            return collect($repos)->map(fn (array $repo): array => [
+                'name' => TypeAs::string($repo['name'] ?? ''),
+                'nameWithOwner' => TypeAs::string($repo['nameWithOwner'] ?? ''),
+            ])->values();
+        } catch (\Exception) {
+            return collect();
+        }
+    }
+
+    /**
      * Get the current GitHub username.
      */
     public function getCurrentUser(): ?string

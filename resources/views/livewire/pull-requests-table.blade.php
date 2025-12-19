@@ -144,7 +144,7 @@
                             {{-- Author (only for review requests) --}}
                             @if (!$isMyPrs)
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    <span class="text-zinc-300">{{ $pr['author']['login'] ?? 'unknown' }}</span>
+                                    <span class="text-zinc-600 dark:text-zinc-300">{{ $pr['author']['login'] ?? 'unknown' }}</span>
                                 </td>
                             @endif
 
@@ -157,7 +157,7 @@
 
                             {{-- Branch --}}
                             <td class="px-4 py-3 font-mono text-xs max-w-[200px]">
-                                <span class="text-zinc-300 block truncate" title="{{ $pr['headRefName'] }}">{{ $pr['headRefName'] }}</span>
+                                <span class="text-zinc-600 dark:text-zinc-300 block truncate" title="{{ $pr['headRefName'] }}">{{ $pr['headRefName'] }}</span>
                             </td>
 
                             {{-- Target --}}
