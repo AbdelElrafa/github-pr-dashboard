@@ -188,7 +188,7 @@
                                 x-on:focus="open = true"
                                 x-on:keydown.escape="open = false; search = ''"
                                 type="text"
-                                placeholder="All repositories - Click to filter..."
+                                :placeholder="selected.length === 0 ? 'All repositories - Click to filter...' : ''"
                                 class="flex-1 min-w-[120px] bg-transparent border-0 p-0 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-0"
                             />
                         </div>
