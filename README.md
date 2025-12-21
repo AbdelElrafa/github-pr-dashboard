@@ -1,72 +1,57 @@
 # GitHub PR Dashboard
 
-A Laravel + Livewire dashboard for managing your GitHub pull requests across multiple organizations.
+A lightweight, static HTML dashboard for managing your GitHub pull requests. No backend required - runs entirely in your browser.
 
 ## Features
 
 - View PRs you've authored and PRs where you're requested as a reviewer
+- Filter by repositories, authors, and reviewers
 - See approval status, CI/CD status, and merge conflict indicators
 - Track unresolved comments per PR
-- Filter by approved PRs (to master vs other branches) and drafts
+- Hide approved PRs and drafts
 - Configurable auto-refresh (1, 3, 5, or 10 minutes)
 - Support for multiple GitHub organizations
+- Dark mode support
+- Copy branch names (optionally with `git checkout` command)
+- All settings persisted in localStorage
 
-## Requirements
+## Usage
 
-- PHP 8.5
-- Composer
-- Node.js & npm
-- GitHub CLI (`gh`) installed
+1. Open `index.html` in your browser (or host it anywhere)
 
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/AbdelElrafa/github-pr-dashboard.git
-   cd github-pr-dashboard
-   ```
-
-2. Install dependencies:
-   ```bash
-   composer install
-   npm install
-   ```
-
-3. Set up environment:
-   ```bash
-   cp .env.example .env
-   php artisan key:generate
-   ```
-
-4. Configure GitHub access in `.env`:
+2. Click the settings icon and enter your GitHub token:
    ```bash
    # Get your token from the GitHub CLI
    gh auth token
    ```
-   ```env
-   GITHUB_TOKEN=your_token_here
-   GITHUB_ORGANIZATIONS=org1,org2  # Optional: comma-separated, leave empty for all
-   ```
 
-5. Build assets:
-   ```bash
-   npm run build
-   ```
+3. Optionally add organization names to filter by specific orgs
 
-6. Start the server:
-   ```bash
-   php artisan serve
-   ```
+4. That's it! Your PRs will load automatically.
 
-7. Visit http://localhost:8000
+## Hosting Options
 
-## Configuration
+Since this is a static HTML file, you can:
 
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | Your GitHub personal access token (get via `gh auth token`) |
-| `GITHUB_ORGANIZATIONS` | Comma-separated list of orgs to filter by. Leave empty to show PRs from all accessible repos. |
+- Open it directly in your browser (`file://`)
+- Serve it locally: `npx serve .`
+- Host on GitHub Pages
+- Host on any static file server (Netlify, Vercel, S3, etc.)
+
+## Tech Stack
+
+- [Alpine.js](https://alpinejs.dev/) - Reactivity (via CDN)
+- [Tailwind CSS](https://tailwindcss.com/) - Styling (via CDN)
+- GitHub GraphQL API - Data fetching
+
+## Privacy
+
+Your GitHub token is stored in your browser's localStorage and never sent anywhere except directly to GitHub's API. All data processing happens client-side.
 
 ## License
 
 MIT
+
+## Credits
+
+Built by [Abdel Elrafa](https://github.com/AbdelElrafa) and [Claude Code](https://claude.ai/code)

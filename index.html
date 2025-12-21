@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub PR Dashboard</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        accent: '#3b82f6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 min-h-screen">
+    <div x-data="dashboard()" x-init="init()" class="min-h-screen flex flex-col">
+        <div class="w-full px-4 py-8 flex-1">
+            <!-- Header -->
+            <header class="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">GitHub PR Dashboard</h1>
+                </div>
+                <div class="flex items-end gap-3">
+                    <!-- Auto-refresh -->
+                    <div class="flex flex-col items-start gap-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-zinc-500">Auto-refresh</span>
+                            <span x-show="lastUpdated" class="text-xs text-zinc-400">· <span x-text="lastUpdatedText"></span></span>
+                        </div>
+                        <div class="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-0.5">
+                            <template x-for="opt in [{v:0,l:'Off'},{v:60,l:'1m'},{v:180,l:'3m'},{v:300,l:'5m'},{v:600,l:'10m'}]" :key="opt.v">
+                                <button
+                                    @click="refreshInterval = opt.v"
+                                    :class="refreshInterval === opt.v ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                                    class="px-2.5 py-1 text-xs font-medium rounded-md transition-colors"
+                                    x-text="opt.l"
+                                ></button>
+                            </template>
+                        </div>
+                    </div>
+                    <!-- Refresh Button -->
+                    <button @click="refresh()" class="p-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700" title="Refresh data">
+                        <svg class="w-4 h-4" :class="{ 'animate-spin': loading }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    <!-- Settings -->
+                    <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                        <button @click="open = !open" class="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                            <svg class="w-5 h-5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                        <div x-show="open" x-cloak x-transition class="absolute right-0 mt-2 w-80 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg z-50">
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">GitHub Token</label>
+                                    <input type="password" x-model="settingsToken" placeholder="ghp_xxxxxxxxxxxx" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-1">Organizations</label>
+                                    <input type="text" x-model="settingsOrganizations" placeholder="org1, org2 (optional)" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm">
+                                </div>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="copyWithGitCheckout" class="rounded">
+                                    <span class="text-sm">Copy branch with <code class="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-700 text-xs">git checkout</code></span>
+                                </label>
+                                <div class="flex gap-2 pt-2">
+                                    <button @click="clearSettings()" class="px-3 py-1.5 text-sm text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200">Clear</button>
+                                    <div class="flex-1"></div>
+                                    <button @click="saveSettings(); open = false" class="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Setup Prompt -->
+            <template x-if="!token">
+                <div class="mb-6 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                            <h3 class="font-semibold text-amber-800 dark:text-amber-200">GitHub Token Required</h3>
+                            <p class="text-sm text-amber-700 dark:text-amber-300">Click the settings icon to add your GitHub token. Run <code class="font-mono bg-amber-100 dark:bg-amber-800 px-1 rounded">gh auth token</code> to get your token.</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Filters -->
+            <template x-if="token && user">
+                <div class="mb-6 p-4 rounded-xl bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <!-- Search -->
+                        <div class="flex-1 min-w-[200px]">
+                            <div class="relative">
+                                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <input type="text" x-model.debounce.250ms="search" placeholder="Search PRs..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Repository Filter -->
+                        <div class="relative flex-1 max-w-md" x-data="{ open: false, repoSearch: '' }" @click.outside="open = false">
+                            <div
+                                @click="$refs.repoInput.focus(); open = true"
+                                class="flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[40px] cursor-text"
+                            >
+                                <template x-for="repo in selectedRepositories" :key="repo">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-700">
+                                        <span x-text="repo.split('/')[1]"></span>
+                                        <button type="button" @click.stop="selectedRepositories = selectedRepositories.filter(r => r !== repo)" class="text-zinc-400 hover:text-zinc-600">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </button>
+                                    </span>
+                                </template>
+                                <input
+                                    x-ref="repoInput"
+                                    x-model="repoSearch"
+                                    @focus="open = true"
+                                    @keydown.escape="open = false; repoSearch = ''"
+                                    type="text"
+                                    :placeholder="selectedRepositories.length === 0 ? 'All repositories...' : ''"
+                                    class="flex-1 min-w-[100px] bg-transparent border-0 p-0 text-sm focus:outline-none focus:ring-0"
+                                >
+                            </div>
+                            <div x-show="open" x-cloak x-transition class="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                                <template x-for="repo in repositories.filter(r => !repoSearch || r.nameWithOwner.toLowerCase().includes(repoSearch.toLowerCase()))" :key="repo.nameWithOwner">
+                                    <button
+                                        type="button"
+                                        @click="toggleRepository(repo.nameWithOwner); repoSearch = ''"
+                                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                        :class="{ 'bg-zinc-50 dark:bg-zinc-700/50': selectedRepositories.includes(repo.nameWithOwner) }"
+                                    >
+                                        <svg x-show="selectedRepositories.includes(repo.nameWithOwner)" class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                        <span x-show="!selectedRepositories.includes(repo.nameWithOwner)" class="w-4 shrink-0"></span>
+                                        <span class="text-zinc-500" x-text="repo.nameWithOwner.split('/')[0] + '/'"></span>
+                                        <span x-text="repo.name"></span>
+                                    </button>
+                                </template>
+                                <template x-if="repositories.length === 0">
+                                    <div class="px-3 py-2 text-sm text-zinc-500">Loading repositories...</div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Hide Options -->
+                        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                            <button @click="open = !open" class="flex items-center gap-1 px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                                <span>Hide</span>
+                                <template x-if="hideApprovedToMain || hideApprovedToOther || hideDrafts">
+                                    <span class="ml-1 px-1.5 py-0.5 text-xs rounded bg-zinc-200 dark:bg-zinc-600" x-text="[hideApprovedToMain, hideApprovedToOther, hideDrafts].filter(Boolean).length"></span>
+                                </template>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                            <div x-show="open" x-cloak x-transition class="absolute right-0 z-50 mt-1 w-48 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                                <label class="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer">
+                                    <input type="checkbox" x-model="hideApprovedToMain" class="rounded">
+                                    <span class="text-sm">Approved -> main</span>
+                                </label>
+                                <label class="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer">
+                                    <input type="checkbox" x-model="hideApprovedToOther" class="rounded">
+                                    <span class="text-sm">Approved -> other</span>
+                                </label>
+                                <label class="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer">
+                                    <input type="checkbox" x-model="hideDrafts" class="rounded">
+                                    <span class="text-sm">Drafts</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Error -->
+            <template x-if="error">
+                <div class="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                    <p class="text-red-700 dark:text-red-300" x-text="error"></p>
+                </div>
+            </template>
+
+            <!-- PR Tables -->
+            <template x-if="token && user">
+                <div class="space-y-8">
+                    <!-- My PRs -->
+                    <div class="relative">
+                        <!-- Author Filter -->
+                        <div class="absolute right-0 top-0 z-10" x-data="{ open: false, memberSearch: '' }" @click.outside="open = false">
+                            <div
+                                @click="$refs.authorInput.focus(); open = true"
+                                class="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[32px] cursor-text"
+                            >
+                                <template x-for="login in selectedAuthors" :key="login">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-700">
+                                        <img :src="getMemberAvatar(login)" class="w-4 h-4 rounded-full">
+                                        <span x-text="login"></span>
+                                        <button type="button" @click.stop="selectedAuthors = selectedAuthors.filter(a => a !== login)" class="text-zinc-400 hover:text-zinc-600">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </button>
+                                    </span>
+                                </template>
+                                <input
+                                    x-ref="authorInput"
+                                    x-model="memberSearch"
+                                    @focus="open = true"
+                                    @keydown.escape="open = false; memberSearch = ''"
+                                    type="text"
+                                    placeholder="Filter by author..."
+                                    class="flex-1 min-w-[100px] bg-transparent border-0 p-0 text-sm focus:outline-none focus:ring-0"
+                                >
+                            </div>
+                            <div x-show="open" x-cloak x-transition class="absolute right-0 z-50 mt-1 w-64 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                                <template x-for="member in members.filter(m => !memberSearch || m.login.toLowerCase().includes(memberSearch.toLowerCase()))" :key="member.login">
+                                    <button
+                                        type="button"
+                                        @click="toggleAuthor(member.login); memberSearch = ''"
+                                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                        :class="{ 'bg-zinc-50 dark:bg-zinc-700/50': selectedAuthors.includes(member.login) }"
+                                    >
+                                        <svg x-show="selectedAuthors.includes(member.login)" class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                        <span x-show="!selectedAuthors.includes(member.login)" class="w-4 shrink-0"></span>
+                                        <img :src="member.avatarUrl" class="w-5 h-5 rounded-full">
+                                        <span x-text="member.login"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Table Header -->
+                        <div class="mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <h2 class="text-lg font-semibold">Pull Requests</h2>
+                            <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-200 dark:bg-zinc-700" x-text="filteredMyPrs.length"></span>
+                        </div>
+
+                        <!-- Table -->
+                        <template x-if="loading">
+                            <div class="p-8 text-center text-zinc-500">Loading pull requests...</div>
+                        </template>
+                        <template x-if="!loading && filteredMyPrs.length === 0">
+                            <div class="p-8 text-center rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500">
+                                No pull requests match your filters
+                            </div>
+                        </template>
+                        <template x-if="!loading && filteredMyPrs.length > 0">
+                            <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                                <table class="w-full text-sm">
+                                    <thead class="text-left bg-zinc-50 dark:bg-zinc-800">
+                                        <tr>
+                                            <th class="px-4 py-3 font-medium">Status</th>
+                                            <th class="px-4 py-3 font-medium text-center" title="CI/CD Status">CI</th>
+                                            <th class="px-4 py-3 font-medium text-center" title="Merge Conflicts">Merge</th>
+                                            <th class="px-4 py-3 font-medium text-center" title="Unresolved Comments">Comments</th>
+                                            <th class="px-4 py-3 font-medium">PR</th>
+                                            <th class="px-4 py-3 font-medium">Title</th>
+                                            <th class="px-4 py-3 font-medium">Branch</th>
+                                            <th class="px-4 py-3 font-medium">Target</th>
+                                            <th class="px-4 py-3 font-medium" x-show="!isFilteringBySelf">Author</th>
+                                            <th class="px-4 py-3 font-medium">Reviewers</th>
+                                            <th class="px-4 py-3 font-medium text-right">Created</th>
+                                            <th class="px-4 py-3 font-medium text-right">Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                                        <template x-for="pr in filteredMyPrs" :key="pr.url">
+                                            <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors" :class="getPrRowClass(pr)">
+                                                <td class="px-4 py-3 whitespace-nowrap" x-html="getStatusBadge(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getCiStatus(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getMergeStatus(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getCommentCount(pr)"></td>
+                                                <td class="px-4 py-3 whitespace-nowrap">
+                                                    <a :href="pr.url" target="_blank" class="hover:underline">
+                                                        <span class="text-zinc-400" x-text="pr.repository.name"></span>
+                                                        <span class="text-zinc-500">#<span x-text="pr.number"></span></span>
+                                                    </a>
+                                                </td>
+                                                <td class="px-4 py-3 max-w-xs">
+                                                    <a :href="pr.url" target="_blank" class="text-accent hover:underline font-medium block truncate" :title="pr.title" x-text="pr.title"></a>
+                                                </td>
+                                                <td class="px-4 py-3 font-mono text-xs max-w-[200px]">
+                                                    <div class="flex items-center gap-1 group" x-data="{ copied: false }">
+                                                        <span class="text-zinc-600 dark:text-zinc-300 block truncate" :title="pr.headRefName" x-text="pr.headRefName"></span>
+                                                        <button
+                                                            type="button"
+                                                            class="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-opacity shrink-0"
+                                                            title="Copy branch name"
+                                                            @click="copyBranch(pr.headRefName); copied = true; setTimeout(() => copied = false, 2000)"
+                                                        >
+                                                            <svg x-show="!copied" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                                            <svg x-show="copied" x-cloak class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 font-mono text-xs max-w-[150px]">
+                                                    <span class="text-zinc-500 block truncate" :title="pr.baseRefName" x-text="pr.baseRefName || 'main'"></span>
+                                                </td>
+                                                <td class="px-4 py-3 whitespace-nowrap" x-show="!isFilteringBySelf">
+                                                    <div class="flex items-center gap-2">
+                                                        <img :src="'https://github.com/' + (pr.author?.login || 'ghost') + '.png?size=32'" class="w-5 h-5 rounded-full">
+                                                        <span class="text-zinc-600 dark:text-zinc-300" x-text="pr.author?.login || 'unknown'"></span>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3" x-html="getReviewers(pr)"></td>
+                                                <td class="px-4 py-3 text-right whitespace-nowrap" x-html="getCreatedTime(pr)"></td>
+                                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                                    <span class="text-zinc-500" :title="formatDate(pr.updatedAt)" x-text="shortTime(pr.updatedAt)"></span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Review Requests -->
+                    <div class="relative">
+                        <!-- Reviewer Filter -->
+                        <div class="absolute right-0 top-0 z-10" x-data="{ open: false, memberSearch: '' }" @click.outside="open = false">
+                            <div
+                                @click="$refs.reviewerInput.focus(); open = true"
+                                class="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 min-h-[32px] cursor-text"
+                            >
+                                <template x-for="login in selectedReviewers" :key="login">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-700">
+                                        <img :src="getMemberAvatar(login)" class="w-4 h-4 rounded-full">
+                                        <span x-text="login"></span>
+                                        <button type="button" @click.stop="selectedReviewers = selectedReviewers.filter(r => r !== login)" class="text-zinc-400 hover:text-zinc-600">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                        </button>
+                                    </span>
+                                </template>
+                                <input
+                                    x-ref="reviewerInput"
+                                    x-model="memberSearch"
+                                    @focus="open = true"
+                                    @keydown.escape="open = false; memberSearch = ''"
+                                    type="text"
+                                    placeholder="Filter by reviewer..."
+                                    class="flex-1 min-w-[100px] bg-transparent border-0 p-0 text-sm focus:outline-none focus:ring-0"
+                                >
+                            </div>
+                            <div x-show="open" x-cloak x-transition class="absolute right-0 z-50 mt-1 w-64 max-h-60 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                                <template x-for="member in members.filter(m => !memberSearch || m.login.toLowerCase().includes(memberSearch.toLowerCase()))" :key="member.login">
+                                    <button
+                                        type="button"
+                                        @click="toggleReviewer(member.login); memberSearch = ''"
+                                        class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                        :class="{ 'bg-zinc-50 dark:bg-zinc-700/50': selectedReviewers.includes(member.login) }"
+                                    >
+                                        <svg x-show="selectedReviewers.includes(member.login)" class="w-4 h-4 text-accent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                        <span x-show="!selectedReviewers.includes(member.login)" class="w-4 shrink-0"></span>
+                                        <img :src="member.avatarUrl" class="w-5 h-5 rounded-full">
+                                        <span x-text="member.login"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Table Header -->
+                        <div class="mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <h2 class="text-lg font-semibold">Review Requests</h2>
+                            <span class="px-2 py-0.5 text-xs rounded-full bg-zinc-200 dark:bg-zinc-700" x-text="filteredReviewRequests.length"></span>
+                        </div>
+
+                        <!-- Table -->
+                        <template x-if="loading">
+                            <div class="p-8 text-center text-zinc-500">Loading review requests...</div>
+                        </template>
+                        <template x-if="!loading && filteredReviewRequests.length === 0">
+                            <div class="p-8 text-center rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500">
+                                No review requests match your filters
+                            </div>
+                        </template>
+                        <template x-if="!loading && filteredReviewRequests.length > 0">
+                            <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+                                <table class="w-full text-sm">
+                                    <thead class="text-left bg-zinc-50 dark:bg-zinc-800">
+                                        <tr>
+                                            <th class="px-4 py-3 font-medium">Status</th>
+                                            <th class="px-4 py-3 font-medium text-center">CI</th>
+                                            <th class="px-4 py-3 font-medium text-center">Merge</th>
+                                            <th class="px-4 py-3 font-medium text-center">Comments</th>
+                                            <th class="px-4 py-3 font-medium">PR</th>
+                                            <th class="px-4 py-3 font-medium">Title</th>
+                                            <th class="px-4 py-3 font-medium">Branch</th>
+                                            <th class="px-4 py-3 font-medium">Target</th>
+                                            <th class="px-4 py-3 font-medium">Author</th>
+                                            <th class="px-4 py-3 font-medium">Reviewers</th>
+                                            <th class="px-4 py-3 font-medium text-right">Created</th>
+                                            <th class="px-4 py-3 font-medium text-right">Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                                        <template x-for="pr in filteredReviewRequests" :key="pr.url">
+                                            <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors" :class="getPrRowClass(pr)">
+                                                <td class="px-4 py-3 whitespace-nowrap" x-html="getStatusBadge(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getCiStatus(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getMergeStatus(pr)"></td>
+                                                <td class="px-4 py-3 text-center" x-html="getCommentCount(pr)"></td>
+                                                <td class="px-4 py-3 whitespace-nowrap">
+                                                    <a :href="pr.url" target="_blank" class="hover:underline">
+                                                        <span class="text-zinc-400" x-text="pr.repository.name"></span>
+                                                        <span class="text-zinc-500">#<span x-text="pr.number"></span></span>
+                                                    </a>
+                                                </td>
+                                                <td class="px-4 py-3 max-w-xs">
+                                                    <a :href="pr.url" target="_blank" class="text-accent hover:underline font-medium block truncate" :title="pr.title" x-text="pr.title"></a>
+                                                </td>
+                                                <td class="px-4 py-3 font-mono text-xs max-w-[200px]">
+                                                    <div class="flex items-center gap-1 group" x-data="{ copied: false }">
+                                                        <span class="text-zinc-600 dark:text-zinc-300 block truncate" :title="pr.headRefName" x-text="pr.headRefName"></span>
+                                                        <button
+                                                            type="button"
+                                                            class="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-opacity shrink-0"
+                                                            @click="copyBranch(pr.headRefName); copied = true; setTimeout(() => copied = false, 2000)"
+                                                        >
+                                                            <svg x-show="!copied" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                                            <svg x-show="copied" x-cloak class="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3 font-mono text-xs max-w-[150px]">
+                                                    <span class="text-zinc-500 block truncate" x-text="pr.baseRefName || 'main'"></span>
+                                                </td>
+                                                <td class="px-4 py-3 whitespace-nowrap">
+                                                    <div class="flex items-center gap-2">
+                                                        <img :src="'https://github.com/' + (pr.author?.login || 'ghost') + '.png?size=32'" class="w-5 h-5 rounded-full">
+                                                        <span class="text-zinc-600 dark:text-zinc-300" x-text="pr.author?.login || 'unknown'"></span>
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-3" x-html="getReviewers(pr)"></td>
+                                                <td class="px-4 py-3 text-right whitespace-nowrap" x-html="getCreatedTime(pr)"></td>
+                                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                                    <span class="text-zinc-500" x-text="shortTime(pr.updatedAt)"></span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Footer -->
+        <footer class="py-6 text-center">
+            <p class="text-sm text-zinc-400">
+                Built by <a href="https://github.com/AbdelElrafa" target="_blank" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline">Abdel Elrafa</a> and <a href="https://claude.ai/code" target="_blank" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:underline">Claude Code</a>
+            </p>
+        </footer>
+
+        <!-- Theme Toggle -->
+        <div class="fixed bottom-4 left-4">
+            <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                <button @click="open = !open" class="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                    <svg x-show="!isDark" class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg x-show="isDark" x-cloak class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                <div x-show="open" x-cloak x-transition class="absolute left-0 bottom-full mb-2 w-36 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                    <button @click="setTheme('light'); open = false" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        Light
+                    </button>
+                    <button @click="setTheme('dark'); open = false" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                        Dark
+                    </button>
+                    <button @click="setTheme('system'); open = false" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-50 dark:hover:bg-zinc-700">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                        System
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GRAPHQL_ENDPOINT = 'https://api.github.com/graphql';
+        const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const CACHE_KEY = 'github_pr_cache';
+        const FILTERS_KEY = 'github_pr_filters';
+
+        function dashboard() {
+            return {
+                // Settings
+                token: '',
+                settingsToken: '',
+                settingsOrganizations: '',
+                organizations: [],
+                copyWithGitCheckout: false, // Include "git checkout" when copying branch
+
+                // User
+                user: null,
+
+                // Data
+                pullRequests: [],
+                repositories: [],
+                members: [],
+
+                // Filters
+                search: '',
+                selectedRepositories: [],
+                selectedAuthors: [],
+                selectedReviewers: [],
+                hideApprovedToMain: false,
+                hideApprovedToOther: false,
+                hideDrafts: false,
+
+                // UI State
+                loading: false,
+                error: null,
+                refreshInterval: 0,
+                refreshTimer: null,
+                filtersInitialized: false, // Track if filters were loaded from storage
+                lastUpdated: null, // Timestamp of last data fetch
+                timeTick: 0, // Used to trigger time display updates
+
+                // Theme
+                isDark: false,
+
+                async init() {
+                    // Load theme
+                    this.loadTheme();
+
+                    // Load saved filters from localStorage
+                    this.loadFilters();
+
+                    // Load settings from localStorage
+                    this.token = localStorage.getItem('github_token') || '';
+                    this.settingsToken = this.token;
+                    this.settingsOrganizations = localStorage.getItem('github_organizations') || '';
+                    this.organizations = this.settingsOrganizations.split(',').map(o => o.trim()).filter(Boolean);
+                    this.copyWithGitCheckout = localStorage.getItem('copy_with_git_checkout') === 'true';
+
+                    if (this.token) {
+                        await this.loadData();
+                    }
+
+                    // Watch for filter changes and save them
+                    this.$watch('refreshInterval', (value) => {
+                        this.setupAutoRefresh(value);
+                        this.saveFilters();
+                    });
+                    this.$watch('search', () => this.saveFilters());
+                    this.$watch('selectedRepositories', () => this.saveFilters());
+                    this.$watch('selectedAuthors', () => this.saveFilters());
+                    this.$watch('selectedReviewers', () => this.saveFilters());
+                    this.$watch('hideApprovedToMain', () => this.saveFilters());
+                    this.$watch('hideApprovedToOther', () => this.saveFilters());
+                    this.$watch('hideDrafts', () => this.saveFilters());
+                    this.$watch('copyWithGitCheckout', (value) => {
+                        localStorage.setItem('copy_with_git_checkout', value);
+                    });
+
+                    // Update time display every 10 seconds
+                    setInterval(() => this.timeTick++, 10000);
+                },
+
+                loadFilters() {
+                    try {
+                        const saved = localStorage.getItem(FILTERS_KEY);
+                        if (saved) {
+                            const filters = JSON.parse(saved);
+                            this.search = filters.search || '';
+                            this.selectedRepositories = filters.selectedRepositories || [];
+                            this.selectedAuthors = filters.selectedAuthors || [];
+                            this.selectedReviewers = filters.selectedReviewers || [];
+                            this.hideApprovedToMain = filters.hideApprovedToMain || false;
+                            this.hideApprovedToOther = filters.hideApprovedToOther || false;
+                            this.hideDrafts = filters.hideDrafts || false;
+                            this.refreshInterval = filters.refreshInterval || 0;
+                            // Mark that we loaded saved filters (even if arrays are empty)
+                            this.filtersInitialized = true;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to load filters:', e);
+                    }
+                },
+
+                saveFilters() {
+                    try {
+                        localStorage.setItem(FILTERS_KEY, JSON.stringify({
+                            search: this.search,
+                            selectedRepositories: this.selectedRepositories,
+                            selectedAuthors: this.selectedAuthors,
+                            selectedReviewers: this.selectedReviewers,
+                            hideApprovedToMain: this.hideApprovedToMain,
+                            hideApprovedToOther: this.hideApprovedToOther,
+                            hideDrafts: this.hideDrafts,
+                            refreshInterval: this.refreshInterval
+                        }));
+                    } catch (e) {
+                        console.warn('Failed to save filters:', e);
+                    }
+                },
+
+                loadTheme() {
+                    const stored = localStorage.getItem('theme');
+                    if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                        document.documentElement.classList.add('dark');
+                        this.isDark = true;
+                    }
+                },
+
+                setTheme(theme) {
+                    if (theme === 'dark') {
+                        document.documentElement.classList.add('dark');
+                        this.isDark = true;
+                        localStorage.setItem('theme', 'dark');
+                    } else if (theme === 'light') {
+                        document.documentElement.classList.remove('dark');
+                        this.isDark = false;
+                        localStorage.setItem('theme', 'light');
+                    } else {
+                        localStorage.removeItem('theme');
+                        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                            document.documentElement.classList.add('dark');
+                            this.isDark = true;
+                        } else {
+                            document.documentElement.classList.remove('dark');
+                            this.isDark = false;
+                        }
+                    }
+                },
+
+                saveSettings() {
+                    // Clear old cache before changing settings
+                    this.clearCache();
+                    localStorage.setItem('github_token', this.settingsToken);
+                    localStorage.setItem('github_organizations', this.settingsOrganizations);
+                    this.token = this.settingsToken;
+                    this.organizations = this.settingsOrganizations.split(',').map(o => o.trim()).filter(Boolean);
+                    this.loadData(true); // Force fresh load
+                },
+
+                clearSettings() {
+                    this.clearCache();
+                    localStorage.removeItem('github_token');
+                    localStorage.removeItem('github_organizations');
+                    this.token = '';
+                    this.settingsToken = '';
+                    this.settingsOrganizations = '';
+                    this.organizations = [];
+                    this.user = null;
+                    this.pullRequests = [];
+                    this.repositories = [];
+                    this.members = [];
+                },
+
+                setupAutoRefresh(interval) {
+                    if (this.refreshTimer) {
+                        clearInterval(this.refreshTimer);
+                        this.refreshTimer = null;
+                    }
+                    if (interval > 0) {
+                        // Auto-refresh runs silently in the background
+                        this.refreshTimer = setInterval(() => this.loadData(true, true), interval * 1000);
+                    }
+                },
+
+                async refresh() {
+                    // Manual refresh bypasses cache and shows loading
+                    await this.loadData(true, false);
+                },
+
+                // Cache helpers
+                getCacheKey() {
+                    return `${CACHE_KEY}_${this.token}_${this.organizations.join(',')}`;
+                },
+
+                getCachedData() {
+                    try {
+                        const cached = localStorage.getItem(this.getCacheKey());
+                        if (!cached) return null;
+
+                        const { timestamp, data } = JSON.parse(cached);
+                        const age = Date.now() - timestamp;
+
+                        if (age < CACHE_TTL) {
+                            console.log(`Using cached data (${Math.round(age / 1000)}s old)`);
+                            return { ...data, cachedAt: timestamp };
+                        }
+                        console.log('Cache expired');
+                        return null;
+                    } catch (e) {
+                        return null;
+                    }
+                },
+
+                setCachedData(data) {
+                    try {
+                        localStorage.setItem(this.getCacheKey(), JSON.stringify({
+                            timestamp: Date.now(),
+                            data
+                        }));
+                    } catch (e) {
+                        console.warn('Failed to cache data:', e);
+                    }
+                },
+
+                clearCache() {
+                    localStorage.removeItem(this.getCacheKey());
+                },
+
+                async loadData(forceRefresh = false, silent = false) {
+                    this.error = null;
+
+                    // Check cache first (unless forcing refresh)
+                    if (!forceRefresh) {
+                        const cached = this.getCachedData();
+                        if (cached) {
+                            this.user = cached.user;
+                            this.repositories = cached.repositories;
+                            this.members = cached.members;
+                            this.pullRequests = cached.pullRequests;
+                            this.lastUpdated = cached.cachedAt;
+
+                            // Set default filters to current user only on first visit (no saved filters)
+                            if (!this.filtersInitialized) {
+                                this.selectedAuthors = [this.user];
+                                this.selectedReviewers = [this.user];
+                                this.filtersInitialized = true;
+                            }
+                            return;
+                        }
+                    }
+
+                    // Only show loading indicator if not silent (auto-refresh is silent)
+                    if (!silent) {
+                        this.loading = true;
+                    }
+
+                    try {
+                        // Get current user
+                        this.user = await this.fetchCurrentUser();
+                        if (!this.user) {
+                            throw new Error('Failed to authenticate. Check your token.');
+                        }
+
+                        // Load data in parallel
+                        const [repos, membersList, prs] = await Promise.all([
+                            this.fetchRepositories(),
+                            this.fetchMembers(),
+                            this.fetchPullRequests()
+                        ]);
+
+                        this.repositories = repos;
+                        this.members = membersList;
+                        this.pullRequests = prs;
+
+                        // Set default filters to current user only on first visit (no saved filters)
+                        if (!this.filtersInitialized) {
+                            this.selectedAuthors = [this.user];
+                            this.selectedReviewers = [this.user];
+                            this.filtersInitialized = true;
+                        }
+
+                        // Update last updated timestamp
+                        this.lastUpdated = Date.now();
+
+                        // Cache the data
+                        this.setCachedData({
+                            user: this.user,
+                            repositories: this.repositories,
+                            members: this.members,
+                            pullRequests: this.pullRequests
+                        });
+                    } catch (err) {
+                        // Only show errors for non-silent refreshes
+                        if (!silent) {
+                            this.error = err.message;
+                        }
+                        console.error('Error loading data:', err);
+                    } finally {
+                        if (!silent) {
+                            this.loading = false;
+                        }
+                    }
+                },
+
+                async graphql(query, variables = {}) {
+                    const response = await fetch(GRAPHQL_ENDPOINT, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ query, variables })
+                    });
+
+                    const data = await response.json();
+                    if (data.errors) {
+                        throw new Error(data.errors.map(e => e.message).join(', '));
+                    }
+                    return data;
+                },
+
+                async fetchCurrentUser() {
+                    const data = await this.graphql('query { viewer { login } }');
+                    return data.data?.viewer?.login;
+                },
+
+                async fetchRepositories() {
+                    if (this.organizations.length > 0) {
+                        const repos = [];
+                        for (const org of this.organizations) {
+                            const data = await this.graphql(`
+                                query($org: String!) {
+                                    organization(login: $org) {
+                                        repositories(first: 100) {
+                                            nodes { name nameWithOwner }
+                                        }
+                                    }
+                                }
+                            `, { org });
+                            const orgRepos = data.data?.organization?.repositories?.nodes || [];
+                            repos.push(...orgRepos);
+                        }
+                        return repos;
+                    } else {
+                        const data = await this.graphql(`
+                            query {
+                                viewer {
+                                    repositories(first: 100, ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR]) {
+                                        nodes { name nameWithOwner }
+                                    }
+                                }
+                            }
+                        `);
+                        return data.data?.viewer?.repositories?.nodes || [];
+                    }
+                },
+
+                async fetchMembers() {
+                    if (this.organizations.length > 0) {
+                        const members = [];
+                        for (const org of this.organizations) {
+                            try {
+                                const data = await this.graphql(`
+                                    query($org: String!) {
+                                        organization(login: $org) {
+                                            membersWithRole(first: 100) {
+                                                nodes { login avatarUrl(size: 32) }
+                                            }
+                                        }
+                                    }
+                                `, { org });
+                                const orgMembers = data.data?.organization?.membersWithRole?.nodes || [];
+                                members.push(...orgMembers);
+                            } catch (e) {
+                                // Might not have permission to list members
+                            }
+                        }
+                        // Deduplicate by login
+                        const unique = {};
+                        members.forEach(m => unique[m.login] = m);
+                        return Object.values(unique).sort((a, b) => a.login.localeCompare(b.login));
+                    } else {
+                        return [{
+                            login: this.user,
+                            avatarUrl: `https://github.com/${this.user}.png?size=32`
+                        }];
+                    }
+                },
+
+                async fetchPullRequests() {
+                    const fragment = `
+                        fragment PullRequestFields on PullRequest {
+                            number title url createdAt updatedAt state isDraft
+                            headRefName baseRefName mergeable reviewDecision
+                            author { login }
+                            repository { name nameWithOwner owner { login } }
+                            commits(last: 1) {
+                                nodes {
+                                    commit {
+                                        statusCheckRollup { state }
+                                    }
+                                }
+                            }
+                            reviews(last: 20) {
+                                nodes {
+                                    author { login avatarUrl(size: 32) }
+                                    state submittedAt
+                                }
+                            }
+                            reviewRequests(first: 20) {
+                                nodes {
+                                    requestedReviewer {
+                                        ... on User { login avatarUrl(size: 32) }
+                                        ... on Team { name }
+                                    }
+                                }
+                            }
+                            reviewThreads(first: 100) {
+                                nodes { isResolved }
+                            }
+                        }
+                    `;
+
+                    let searchQuery;
+                    if (this.selectedRepositories.length > 0) {
+                        const repoFilters = this.selectedRepositories.map(r => `repo:${r}`).join(' ');
+                        searchQuery = `is:pr is:open ${repoFilters}`;
+                    } else if (this.organizations.length > 0) {
+                        const orgFilters = this.organizations.map(o => `org:${o}`).join(' ');
+                        searchQuery = `is:pr is:open ${orgFilters}`;
+                    } else {
+                        // Fetch both authored and review-requested PRs
+                        const [authored, reviewRequested] = await Promise.all([
+                            this.executePrSearch(`is:pr is:open author:@me`, fragment),
+                            this.executePrSearch(`is:pr is:open review-requested:@me`, fragment)
+                        ]);
+                        // Merge and deduplicate
+                        const all = [...authored, ...reviewRequested];
+                        const unique = {};
+                        all.forEach(pr => unique[pr.url] = pr);
+                        return Object.values(unique);
+                    }
+
+                    return this.executePrSearch(searchQuery, fragment);
+                },
+
+                async executePrSearch(searchQuery, fragment) {
+                    const query = `
+                        query($searchQuery: String!, $cursor: String) {
+                            search(query: $searchQuery, type: ISSUE, first: 100, after: $cursor) {
+                                pageInfo { hasNextPage endCursor }
+                                nodes {
+                                    ... on PullRequest { ...PullRequestFields }
+                                }
+                            }
+                        }
+                        ${fragment}
+                    `;
+
+                    const allPrs = [];
+                    let cursor = null;
+
+                    do {
+                        const data = await this.graphql(query, { searchQuery, cursor });
+                        const search = data.data?.search || {};
+                        const nodes = search.nodes || [];
+
+                        for (const pr of nodes) {
+                            if (pr && pr.number) {
+                                allPrs.push(this.transformPr(pr));
+                            }
+                        }
+
+                        cursor = search.pageInfo?.endCursor;
+                        if (!search.pageInfo?.hasNextPage) break;
+                    } while (cursor);
+
+                    return allPrs;
+                },
+
+                transformPr(pr) {
+                    // Get reviews (latest per reviewer)
+                    const reviewNodes = pr.reviews?.nodes || [];
+                    const reviewsByAuthor = {};
+                    reviewNodes.forEach(r => {
+                        const login = r.author?.login || 'unknown';
+                        if (!reviewsByAuthor[login] || r.submittedAt > reviewsByAuthor[login].submittedAt) {
+                            reviewsByAuthor[login] = r;
+                        }
+                    });
+
+                    // Get pending review requests
+                    const reviewersWhoReviewed = Object.keys(reviewsByAuthor);
+                    const reviewRequestNodes = pr.reviewRequests?.nodes || [];
+                    const pendingReviewers = reviewRequestNodes
+                        .map(r => {
+                            const reviewer = r.requestedReviewer;
+                            return reviewer ? {
+                                login: reviewer.login || reviewer.name,
+                                avatarUrl: reviewer.avatarUrl
+                            } : null;
+                        })
+                        .filter(r => r && !reviewersWhoReviewed.includes(r.login))
+                        .map(r => ({
+                            author: { login: r.login, avatarUrl: r.avatarUrl },
+                            state: 'PENDING'
+                        }));
+
+                    const allReviews = [...Object.values(reviewsByAuthor), ...pendingReviewers];
+
+                    // Review requests as array
+                    const reviewRequests = reviewRequestNodes
+                        .map(r => {
+                            const reviewer = r.requestedReviewer;
+                            return reviewer ? { login: reviewer.login || reviewer.name, avatarUrl: reviewer.avatarUrl } : null;
+                        })
+                        .filter(Boolean);
+
+                    // Unresolved threads
+                    const unresolvedCount = (pr.reviewThreads?.nodes || []).filter(t => !t.isResolved).length;
+
+                    // CI Status
+                    const commits = pr.commits?.nodes || [];
+                    const ciStatus = commits[0]?.commit?.statusCheckRollup?.state || null;
+
+                    return {
+                        number: pr.number,
+                        title: pr.title,
+                        url: pr.url,
+                        createdAt: pr.createdAt,
+                        updatedAt: pr.updatedAt,
+                        state: pr.state,
+                        isDraft: pr.isDraft || false,
+                        headRefName: pr.headRefName,
+                        baseRefName: pr.baseRefName,
+                        mergeable: pr.mergeable,
+                        reviewDecision: pr.reviewDecision,
+                        isApproved: pr.reviewDecision === 'APPROVED',
+                        ciStatus,
+                        author: pr.author || { login: 'unknown' },
+                        repository: pr.repository || { name: '', nameWithOwner: '' },
+                        reviews: allReviews,
+                        reviewRequests,
+                        unresolvedCount
+                    };
+                },
+
+                // Computed properties
+                get isFilteringBySelf() {
+                    return this.selectedAuthors.length === 1 && this.selectedAuthors[0] === this.user;
+                },
+
+                get filteredMyPrs() {
+                    let prs = this.pullRequests;
+
+                    // Filter by authors (if any selected)
+                    if (this.selectedAuthors.length > 0) {
+                        prs = prs.filter(pr => this.selectedAuthors.includes(pr.author?.login));
+                    }
+                    // If no authors selected, show all PRs
+
+                    return this.applyCommonFilters(prs);
+                },
+
+                get filteredReviewRequests() {
+                    let prs = this.pullRequests;
+
+                    // Filter by reviewers (if any selected)
+                    if (this.selectedReviewers.length > 0) {
+                        prs = prs.filter(pr => {
+                            const requestedLogins = (pr.reviewRequests || []).map(r => r.login);
+                            return this.selectedReviewers.some(r => requestedLogins.includes(r));
+                        });
+                    }
+                    // If no reviewers selected, show all PRs
+
+                    return this.applyCommonFilters(prs);
+                },
+
+                applyCommonFilters(prs) {
+                    // Repository filter
+                    if (this.selectedRepositories.length > 0) {
+                        prs = prs.filter(pr => this.selectedRepositories.includes(pr.repository.nameWithOwner));
+                    }
+
+                    // Hide approved
+                    if (this.hideApprovedToMain) {
+                        prs = prs.filter(pr => !(pr.isApproved && ['main', 'master'].includes(pr.baseRefName)));
+                    }
+                    if (this.hideApprovedToOther) {
+                        prs = prs.filter(pr => !(pr.isApproved && !['main', 'master'].includes(pr.baseRefName)));
+                    }
+
+                    // Hide drafts
+                    if (this.hideDrafts) {
+                        prs = prs.filter(pr => !pr.isDraft);
+                    }
+
+                    // Search
+                    if (this.search) {
+                        const s = this.search.toLowerCase();
+                        prs = prs.filter(pr =>
+                            pr.title.toLowerCase().includes(s) ||
+                            pr.headRefName.toLowerCase().includes(s) ||
+                            pr.number.toString().includes(s) ||
+                            pr.author?.login?.toLowerCase().includes(s) ||
+                            pr.repository.name.toLowerCase().includes(s)
+                        );
+                    }
+
+                    // Sort: non-approved first, then by unresolved, then by updated
+                    return prs.sort((a, b) => {
+                        if (a.isApproved !== b.isApproved) return a.isApproved ? 1 : -1;
+                        if (a.unresolvedCount !== b.unresolvedCount) return b.unresolvedCount - a.unresolvedCount;
+                        return new Date(b.updatedAt) - new Date(a.updatedAt);
+                    });
+                },
+
+                // Filter toggles
+                toggleRepository(nameWithOwner) {
+                    const idx = this.selectedRepositories.indexOf(nameWithOwner);
+                    if (idx === -1) {
+                        this.selectedRepositories.push(nameWithOwner);
+                    } else {
+                        this.selectedRepositories.splice(idx, 1);
+                    }
+                },
+
+                toggleAuthor(login) {
+                    const idx = this.selectedAuthors.indexOf(login);
+                    if (idx === -1) {
+                        this.selectedAuthors.push(login);
+                    } else {
+                        this.selectedAuthors.splice(idx, 1);
+                    }
+                },
+
+                toggleReviewer(login) {
+                    const idx = this.selectedReviewers.indexOf(login);
+                    if (idx === -1) {
+                        this.selectedReviewers.push(login);
+                    } else {
+                        this.selectedReviewers.splice(idx, 1);
+                    }
+                },
+
+                getMemberAvatar(login) {
+                    const member = this.members.find(m => m.login === login);
+                    return member?.avatarUrl || `https://github.com/${login}.png?size=32`;
+                },
+
+                copyBranch(branchName) {
+                    const text = this.copyWithGitCheckout ? `git checkout ${branchName}` : branchName;
+                    navigator.clipboard.writeText(text);
+                },
+
+                // Formatting helpers
+                shortTime(dateStr) {
+                    const date = new Date(dateStr);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    if (diffMins < 60) return diffMins + 'm';
+                    const diffHours = Math.floor(diffMins / 60);
+                    if (diffHours < 24) return diffHours + 'h';
+                    const diffDays = Math.floor(diffHours / 24);
+                    if (diffDays < 30) return diffDays + 'd';
+                    const diffMonths = Math.floor(diffDays / 30);
+                    return diffMonths + 'mo';
+                },
+
+                formatDate(dateStr) {
+                    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                },
+
+                get lastUpdatedText() {
+                    // Reference timeTick to trigger re-render every 10s
+                    void this.timeTick;
+                    if (!this.lastUpdated) return '';
+                    const seconds = Math.floor((Date.now() - this.lastUpdated) / 1000);
+                    if (seconds < 5) return 'just now';
+                    if (seconds < 60) return `${seconds}s ago`;
+                    const minutes = Math.floor(seconds / 60);
+                    if (minutes < 60) return `${minutes}m ago`;
+                    const hours = Math.floor(minutes / 60);
+                    return `${hours}h ago`;
+                },
+
+                getDaysOld(dateStr) {
+                    const date = new Date(dateStr);
+                    const now = new Date();
+                    return Math.floor((now - date) / (1000 * 60 * 60 * 24));
+                },
+
+                getPrRowClass(pr) {
+                    const daysOld = this.getDaysOld(pr.createdAt);
+                    if (daysOld >= 14) return 'bg-red-50/50 dark:bg-red-950/20';
+                    if (daysOld >= 7) return 'bg-amber-50/50 dark:bg-amber-950/20';
+                    return '';
+                },
+
+                getStatusBadge(pr) {
+                    if (pr.isDraft) {
+                        return '<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">Draft</span>';
+                    }
+                    if (pr.reviewDecision === 'APPROVED') {
+                        return '<span class="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">Approved</span>';
+                    }
+                    if (pr.reviewDecision === 'CHANGES_REQUESTED') {
+                        return '<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">Changes</span>';
+                    }
+                    if (pr.reviewDecision === 'REVIEW_REQUIRED') {
+                        return '<span class="px-2 py-0.5 text-xs rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">Review Required</span>';
+                    }
+                    return '<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">Pending</span>';
+                },
+
+                getCiStatus(pr) {
+                    const icons = {
+                        'SUCCESS': '<span class="text-green-400" title="SUCCESS">✓</span>',
+                        'FAILURE': '<span class="text-red-400" title="FAILURE">✗</span>',
+                        'ERROR': '<span class="text-red-400" title="ERROR">✗</span>',
+                        'PENDING': '<span class="text-yellow-400" title="PENDING">◐</span>',
+                        'EXPECTED': '<span class="text-yellow-400" title="EXPECTED">◐</span>'
+                    };
+                    return icons[pr.ciStatus] || '<span class="text-zinc-600">—</span>';
+                },
+
+                getMergeStatus(pr) {
+                    if (pr.mergeable === 'CONFLICTING') {
+                        return '<span class="text-red-400" title="Has merge conflicts">⚠</span>';
+                    }
+                    if (pr.mergeable === 'MERGEABLE') {
+                        return '<span class="text-green-400" title="Ready to merge">✓</span>';
+                    }
+                    return '<span class="text-zinc-600" title="Unknown">—</span>';
+                },
+
+                getCommentCount(pr) {
+                    if (pr.unresolvedCount > 0) {
+                        return `<span class="text-orange-400 font-medium">${pr.unresolvedCount}</span>`;
+                    }
+                    return '<span class="text-zinc-600">—</span>';
+                },
+
+                getReviewers(pr) {
+                    const ringColors = {
+                        'APPROVED': 'ring-green-500',
+                        'CHANGES_REQUESTED': 'ring-red-500',
+                        'COMMENTED': 'ring-blue-500',
+                        'PENDING': 'ring-zinc-400',
+                        'DISMISSED': 'ring-zinc-500'
+                    };
+                    const textColors = {
+                        'APPROVED': 'text-green-400',
+                        'CHANGES_REQUESTED': 'text-red-400',
+                        'COMMENTED': 'text-blue-400',
+                        'PENDING': 'text-zinc-400',
+                        'DISMISSED': 'text-zinc-500'
+                    };
+
+                    return (pr.reviews || []).map(r => {
+                        const login = r.author?.login || 'unknown';
+                        const avatar = r.author?.avatarUrl || `https://github.com/${login}.png?size=32`;
+                        const state = r.state || 'PENDING';
+                        const ring = ringColors[state] || 'ring-zinc-400';
+                        const text = textColors[state] || 'text-zinc-400';
+                        return `<span class="inline-flex items-center gap-1 text-xs whitespace-nowrap ${text}" title="${login}: ${state}">
+                            <img src="${avatar}" alt="${login}" class="w-5 h-5 rounded-full ring-2 ${ring}">
+                            <span>${login}</span>
+                        </span>`;
+                    }).join(' ');
+                },
+
+                getCreatedTime(pr) {
+                    const daysOld = this.getDaysOld(pr.createdAt);
+                    let cls = 'text-zinc-500';
+                    if (daysOld >= 14) cls = 'text-red-500';
+                    else if (daysOld >= 7) cls = 'text-amber-500';
+                    return `<span class="${cls}" title="${this.formatDate(pr.createdAt)}">${this.shortTime(pr.createdAt)}</span>`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
